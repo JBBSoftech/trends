@@ -184,7 +184,7 @@ class MyApp extends StatelessWidget {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
-      cardTheme: const CardThemeData(
+      cardTheme: const CardTheme(
         elevation: 3,
         shadowColor: Colors.black12,
         shape: RoundedRectangleBorder(
@@ -305,7 +305,7 @@ class _HomePageState extends State<HomePage> {
                         const Icon(Icons.store, size: 32, color: Colors.white),
                         const SizedBox(width: 8),
                         Text(
-                          'Trend',
+                          'Trends',
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
