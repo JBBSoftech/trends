@@ -110,7 +110,20 @@ class CartManager extends ChangeNotifier {
     return subtotal + tax;
   }
   
+  double get totalDiscount {
+    return _items.fold(0.0, (sum, item) => 
+      sum + ((item.price - item.effectivePrice) * item.quantity));
+  }
+  
+  double get gstAmount {
+    return PriceUtils.calculateTax(subtotal, 18.0); // 18% GST
+  }
+  
   double get finalTotal {
+    return subtotal + gstAmount;
+  }
+  
+  double get finalTotalWithShipping {
     return PriceUtils.applyShipping(totalWithTax, 5.99); // $5.99 shipping
   }
 }
@@ -184,7 +197,7 @@ class MyApp extends StatelessWidget {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         elevation: 3,
         shadowColor: Colors.black12,
         shape: RoundedRectangleBorder(
@@ -305,7 +318,7 @@ class _HomePageState extends State<HomePage> {
                         const Icon(Icons.store, size: 32, color: Colors.white),
                         const SizedBox(width: 8),
                         Text(
-                          'Trends1',
+                          'Trends',
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -381,20 +394,7 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         TextField(
                           onChanged: (value) {
-                            setState(() {
-                              _searchQuery = value;
-                              if (value.isEmpty) {
-                                _filteredProducts = List.from(productCards);
-                              } else {
-                                _filteredProducts = productCards.where((product) {
-                                  final productName = (product['productName'] ?? '').toString().toLowerCase();
-                                  final price = (product['price'] ?? '').toString().toLowerCase();
-                                  final discountPrice = (product['discountPrice'] ?? '').toString().toLowerCase();
-                                  final searchLower = value.toLowerCase();
-                                  return productName.contains(searchLower) || price.contains(searchLower) || discountPrice.contains(searchLower);
-                                }).toList();
-                              }
-                            });
+                            _filterProducts(value);
                           },
                           decoration: InputDecoration(
                             hintText: 'Hello',
@@ -482,17 +482,20 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Shopping Cart'),
         automaticallyImplyLeading: false,
       ),
-      body: _cartManager.items.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text('Your cart is empty', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                ],
-              ),
-            )
+      body: ListenableBuilder(
+        listenable: _cartManager,
+        builder: (context, child) {
+          return _cartManager.items.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text('Your cart is empty', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                    ],
+                  ),
+                )
           : Column(
               children: [
                 Expanded(
@@ -534,7 +537,25 @@ class _HomePageState extends State<HomePage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    Text(PriceUtils.formatPrice(item.effectivePrice)),
+                                    // Show current price (effective price)
+                                    Text(
+                                      PriceUtils.formatPrice(item.effectivePrice),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                    // Show original price if there's a discount
+                                    if (item.discountPrice > 0 && item.price != item.discountPrice)
+                                      Text(
+                                        PriceUtils.formatPrice(item.price),
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          decoration: TextDecoration.lineThrough,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -566,58 +587,76 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                 ),
+                // Bill Summary Section
                 Container(
+                  margin: const EdgeInsets.all(16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    border: const Border(top: BorderSide(color: Colors.grey)),
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Subtotal:', style: TextStyle(fontSize: 16)),
-                          Text(PriceUtils.formatPrice(_cartManager.subtotal), style: const TextStyle(fontSize: 16)),
-                        ],
+                      const Text(
+                        'Bill Summary',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Tax (8%):', style: TextStyle(fontSize: 16)),
-                          Text(PriceUtils.formatPrice(PriceUtils.calculateTax(_cartManager.subtotal, 8.0)), style: const TextStyle(fontSize: 16)),
-                        ],
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Subtotal', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                            Text(PriceUtils.formatPrice(_cartManager.subtotal), style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Shipping:', style: TextStyle(fontSize: 16)),
-                          Text(PriceUtils.formatPrice(5.99), style: const TextStyle(fontSize: 16)),
-                        ],
+                      if (_cartManager.totalDiscount > 0)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Discount', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                              Text('-$0.00', style: const TextStyle(fontSize: 14, color: Colors.green)),
+                            ],
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('GST (18%)', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                            Text(PriceUtils.formatPrice(_cartManager.gstAmount), style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                          ],
+                        ),
                       ),
-                      const Divider(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text(PriceUtils.formatPrice(_cartManager.finalTotal), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {},
-                          child: const Text('Checkout'),
+                      const Divider(thickness: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+                            Text(PriceUtils.formatPrice(_cartManager.finalTotal), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
               ],
-            ),
+            );
+        },
+      ),
     );
   }
 
@@ -712,39 +751,61 @@ class _HomePageState extends State<HomePage> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          children: [            const Text(
-              'User Profile',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: 'Name',
-                hintText: 'Enter your name',
+          children: [            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                    radius: 60,
+                    backgroundColor: Colors.grey,
+                    child: Icon(Icons.person, size: 60, color: Colors.white),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'John Doe',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(250, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      // Refund button action
+                    },
+                    child: const Text(
+                      'Refund',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(250, 50),
+                      side: const BorderSide(color: Colors.grey),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      // Log Out button action
+                    },
+                    child: const Text(
+                      'Log Out',
+                      style: TextStyle(fontSize: 18, color: Colors.black),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: 'Email',
-                hintText: 'Enter your email',
-              ),
-            ),
-            const SizedBox(height: 12),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: 'Phone',
-                hintText: 'Enter your phone number',
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Profile saved')),
-                );
-              },
-              child: const Text('Save Profile'),
             ),          ],
         ),
       ),
@@ -786,4 +847,5 @@ class _HomePageState extends State<HomePage> {
       ],
     );
   }
+
 }
